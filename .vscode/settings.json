@@ -1,0 +1,51 @@
+{
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/bower_components": true,
+    "**/.sfdx": true
+  },
+  "files.exclude": {
+    "**/.git": true,
+    "**/.svn": true,
+    "**/.hg": true,
+    "**/CVS": true,
+    "**/.DS_Store": true,
+    "**/*.cls-meta.xml": true
+  },
+  "todohighlight.isCaseSensitive": false,
+  "todohighlight.include": [
+    "**/*.cls",
+    "**/*.css",
+    "**/*.html",
+    "**/*.js",
+    "**/*.trigger"
+  ],
+  "todohighlight.exclude": [
+    "**/*.map",
+    "**/*.min.*",
+    "**/.localdevserver/**",
+    "**/.vscode/**",
+    "**/dist/**",
+    "**/lib/**",
+    "**/node_modules/**"
+  ],
+  "todohighlight.keywords": [
+    "TODO:",
+    "NOTE:",
+    {
+      "text": "i18n:",
+      "color": "white",
+      "backgroundColor": "green"
+    }
+  ],
+  "rewrap.wrappingColumn": 80,
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "javascript.implicitProjectConfig.checkJs": true,
+  "debug.node.autoAttach": "on",
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.checkstyle.configuration": "${workspaceFolder}/checkstyle.xml",
+  "files.watcherExclude": {
+    "**/target": true
+  }
+}

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+    <testsuite name="force.apex" timestamp="2025-06-10T08:02:59.295Z" hostname="https://computing-customer-1332-dev-ed.scratch.my.salesforce.com" tests="2" failures="0"  errors="0"  time="0.48">
+        <properties>
+            <property name="commandTime" value="0.00 s"/>
+            <property name="failRate" value="0.00%"/>
+            <property name="failing" value="0"/>
+            <property name="hostname" value="https://computing-customer-1332-dev-ed.scratch.my.salesforce.com"/>
+            <property name="orgId" value="00DDS000001zqMs2AI"/>
+            <property name="passRate" value="100%"/>
+            <property name="passing" value="2"/>
+            <property name="skipped" value="0"/>
+            <property name="testExecutionTime" value="0.48 s"/>
+            <property name="testStartTime" value="Tue Jun 10 2025 1:32:59 PM"/>
+            <property name="testTotalTime" value="0.48 s"/>
+            <property name="testsRan" value="2"/>
+            <property name="username" value="test-p1s9qwgt4ps6@example.com"/>
+        </properties>
+        <testcase name="testDatainsert" classname="DataInsertTest" time="0.32">
+        </testcase>
+        <testcase name="testDynamicSObjectCreation" classname="DataInsertTest" time="0.13">
+        </testcase>
+    </testsuite>
+</testsuites>

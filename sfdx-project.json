@@ -1,0 +1,23 @@
+{
+  "packageDirectories": [
+    {
+      "path": "force-app",
+      "package": "DevOps Testing",
+      "versionName": "1.0.0",
+      "default": true,
+      "versionDescription": "",
+      "dependencies": [
+        {
+          "package": "DevOps Center",
+          "versionNumber": "8.2.0.4"
+        }
+      ]
+    }
+  ],
+  "name": "devops-quality",
+  "sfdcLoginUrl": "https://login.salesforce.com",
+  "sourceApiVersion": "60.0",
+  "packageAliases": {
+   
+  }
+}

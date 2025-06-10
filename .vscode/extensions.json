@@ -1,0 +1,14 @@
+{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "donjayamanne.githistory",
+    "eamodio.gitlens",
+    "esbenp.prettier-vscode",
+    "pivotal.vscode-boot-dev-pack",
+    "redhat.vscode-xml",
+    "salesforce.salesforcedx-vscode",
+    "stkb.rewrap",
+    "vscjava.vscode-java-pack",
+    "wayou.vscode-todo-highlight"
+  ]
+}

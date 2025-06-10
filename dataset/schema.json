@@ -1,0 +1,9 @@
+[
+    {
+        "Entity" : "Test_Suite_Test__c",
+        "Dependancies": [
+            "Test__c",
+            "Test_Suite__c"
+        ]
+    }
+]
