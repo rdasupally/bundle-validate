@@ -1,32 +1,7 @@
 @isTest
 public class DataInsertTest {
+    static Map<String, SObject> idToRecordMap = new Map<String, SObject>();
     
-    // Class-level variable to store external ID mappings for all entities
-    private static Map<String, EntityExternalIdMapping> entityExternalIdMappings = new Map<String, EntityExternalIdMapping>();
-    
-    // Helper class to return both records and external ID mappings
-    public class CSVProcessResult {
-        public List<SObject> records;
-        public Map<String, Integer> externalIdToRecordIndex; // Maps external ID to record index
-        
-        public CSVProcessResult() {
-            this.records = new List<SObject>();
-            this.externalIdToRecordIndex = new Map<String, Integer>();
-        }
-    }
-    
-    // Helper class to store external ID mappings for an entity
-    public class EntityExternalIdMapping {
-        public String entityName;
-        public Map<String, Id> externalIdToSalesforceId;
-        public Map<String, SObject> externalIdToRecord; // Store the actual record objects
-        
-        public EntityExternalIdMapping(String entityName) {
-            this.entityName = entityName;
-            this.externalIdToSalesforceId = new Map<String, Id>();
-            this.externalIdToRecord = new Map<String, SObject>();
-        }
-    }
     @isTest
     public static void testDatainsert() {
         // read static resource schema.json
@@ -72,33 +47,12 @@ public class DataInsertTest {
                         System.debug('CSV preview (first 200 chars): ' + dataCsv.substring(0, Math.min(200, dataCsv.length())));
                         
                         // Create sObjects dynamically from CSV data
-                        CSVProcessResult result = createSObjectsFromCSVWithExternalIds(dependancyEntity, dataCsv);
-                        List<SObject> dynamicRecords = result.records;
+                        List<SObject> dynamicRecords = createSObjectsFromCSV(dependancyEntity, dataCsv);
                         
                         if (!dynamicRecords.isEmpty()) {
                             // Store records for batch insertion
                             if (!allRecordsToInsert.containsKey(dependancyEntity)) {
                                 allRecordsToInsert.put(dependancyEntity, new List<SObject>());
-                            }
-                            
-                            // Store external ID mappings for junction record creation
-                            if (!result.externalIdToRecordIndex.isEmpty()) {
-                                if (!entityExternalIdMappings.containsKey(dependancyEntity)) {
-                                    entityExternalIdMappings.put(dependancyEntity, new EntityExternalIdMapping(dependancyEntity));
-                                }
-                                
-                                // Store the relationship between external IDs and their record objects
-                                EntityExternalIdMapping entityMapping = entityExternalIdMappings.get(dependancyEntity);
-                                for (String externalId : result.externalIdToRecordIndex.keySet()) {
-                                    Integer recordIndex = result.externalIdToRecordIndex.get(externalId);
-                                    SObject recordObject = dynamicRecords[recordIndex];
-                                    
-                                    // Store the record object so we can get its ID after insert
-                                    entityMapping.externalIdToRecord.put(externalId, recordObject);
-                                    entityMapping.externalIdToSalesforceId.put(externalId, null); // Will be updated after insert
-                                }
-                                
-                                System.debug('Stored external ID mappings for ' + dependancyEntity + ': ' + result.externalIdToRecordIndex.keySet());
                             }
                             
                             allRecordsToInsert.get(dependancyEntity).addAll(dynamicRecords);
@@ -126,6 +80,16 @@ public class DataInsertTest {
             
             // Batch insert all records by entity type
             insertRecordsByEntity(allRecordsToInsert);
+
+            for (String entityType : allRecordsToInsert.keySet()) {
+                System.debug('inserted Entity: ' + entityType + ', Records: ' + allRecordsToInsert.get(entityType).size());
+                for (SObject record : allRecordsToInsert.get(entityType)) {
+                    System.debug('inserted Record: ' + record);
+                }
+            }
+            
+            // Update idToRecordMap with Salesforce IDs after insertion
+            updateIdToRecordMapWithSalesforceIds();
             
             // Now we need to map the Test_Suite_Test__c field with respective Test_Suite__c and Test__c ids dynamically
             createJunctionRecords();
@@ -152,16 +116,13 @@ public class DataInsertTest {
         }
     }
     
-    // Helper method to insert records in batches by entity type and update external ID mappings
+    // Helper method to insert records in batches by entity type
     private static void insertRecordsByEntity(Map<String, List<SObject>> recordsByEntity) {
         for (String entityType : recordsByEntity.keySet()) {
             List<SObject> records = recordsByEntity.get(entityType);
             try {
                 insert records;
                 System.debug('Successfully inserted ' + records.size() + ' records for ' + entityType);
-                
-                // After successful insert, update the external ID mappings with actual Salesforce IDs
-                updateExternalIdMappingsAfterInsert(entityType, records);
                 
             } catch (DmlException e) {
                 System.debug('DML Error inserting records for ' + entityType + ':' + e.getMessage());
@@ -174,39 +135,25 @@ public class DataInsertTest {
         }
     }
     
-    // Helper method to update external ID mappings after records are inserted
-    private static void updateExternalIdMappingsAfterInsert(String entityType, List<SObject> insertedRecords) {
+    // Helper method to update idToRecordMap with Salesforce IDs after insertion
+    private static void updateIdToRecordMapWithSalesforceIds() {
         try {
-            // Check if we have external ID mappings for this entity
-            if (!entityExternalIdMappings.containsKey(entityType)) {
-                System.debug('No external ID mappings found for entity: ' + entityType);
-                return;
+            System.debug('Updating idToRecordMap with Salesforce IDs after insertion');
+            System.debug('idToRecordMap size before update: ' + idToRecordMap.size());
+            
+            // The records in idToRecordMap now have their Salesforce IDs populated after insert
+            for (String externalId : idToRecordMap.keySet()) {
+                SObject record = idToRecordMap.get(externalId);
+                Id salesforceId = record.Id;
+                System.debug('External ID "' + externalId + '" -> Salesforce ID "' + salesforceId + '"');
             }
-            
-            EntityExternalIdMapping entityMapping = entityExternalIdMappings.get(entityType);
-            
-            // After insert, the record objects in our mapping now have their IDs populated
-            // Update the external ID to Salesforce ID mapping
-            for (String externalId : entityMapping.externalIdToRecord.keySet()) {
-                SObject recordObject = entityMapping.externalIdToRecord.get(externalId);
-                Id salesforceId = recordObject.Id;
-                
-                if (salesforceId != null) {
-                    entityMapping.externalIdToSalesforceId.put(externalId, salesforceId);
-                    System.debug('Mapped external ID "' + externalId + '" to Salesforce ID "' + salesforceId + '" for entity ' + entityType);
-                } else {
-                    System.debug('WARNING: No Salesforce ID found for external ID "' + externalId + '" in entity ' + entityType);
-                }
-            }
-            
-            System.debug('Updated external ID mappings for ' + entityType + ': ' + entityMapping.externalIdToSalesforceId.size() + ' mappings');
             
         } catch (Exception e) {
-            System.debug('Error updating external ID mappings for ' + entityType + ': ' + e.getMessage());
+            System.debug('Error updating idToRecordMap: ' + e.getMessage());
         }
     }
     
-    // Optimized method to create sObjects dynamically from CSV data
+    // Helper method to create sObjects dynamically from CSV data
     // Assumes objects are available during validation deployment
     public static List<SObject> createSObjectsFromCSV(String objectType, String csvData) {
         System.debug('=== createSObjectsFromCSV Debug Start ===');
@@ -280,8 +227,14 @@ public class DataInsertTest {
                 SObject record = sObjectType.newSObject();
                 Boolean hasValidData = false;
                 
+                String externalId = '';
                 // Populate fields dynamically
                 for (Integer j = 0; j < headers.size() && j < dataValues.size(); j++) {
+                    if (headers[j].toLowerCase() == 'id') {
+                        externalId = dataValues[j];
+                        continue;
+                    }
+
                     if (!validHeaders.contains(headers[j])) {
                         continue;
                     }
@@ -297,6 +250,7 @@ public class DataInsertTest {
                 
                 // Only add record if it has at least some valid data
                 if (hasValidData) {
+                    idToRecordMap.put(externalId, record);
                     records.add(record);
                 }
             }
@@ -309,134 +263,6 @@ public class DataInsertTest {
         }
         
         return records;
-    }
-    
-    // Enhanced method to create sObjects dynamically from CSV data and capture external ID mappings
-    public static CSVProcessResult createSObjectsFromCSVWithExternalIds(String objectType, String csvData) {
-        System.debug('=== createSObjectsFromCSVWithExternalIds Debug Start ===');
-        System.debug('Object Type: ' + objectType);
-        System.debug('CSV Data Length: ' + (csvData != null ? csvData.length() + '': 'null'));
-        
-        CSVProcessResult result = new CSVProcessResult();
-        
-        if (String.isBlank(csvData) || String.isBlank(objectType)) {
-            System.debug('Invalid input: objectType=' + objectType + ', csvData is blank=' + String.isBlank(csvData));
-            return result;
-        }
-        
-        try {
-            // Try to get sObject type
-            System.debug('Attempting to get SObject type for: ' + objectType);
-            Schema.SObjectType sObjectType = getSObjectType(objectType);
-            if (sObjectType == null) {
-                System.debug('Object type not found: ' + objectType + '. Available objects: ' + getAvailableCustomObjects());
-                return result;
-            }
-            System.debug('SObject type found successfully: ' + sObjectType);
-            
-            // Get field information for validation
-            Map<String, Schema.SObjectField> fieldsMap = new Map<String, Schema.SObjectField>();
-            try {
-                Schema.DescribeSObjectResult objectDescribe = sObjectType.getDescribe();
-                fieldsMap = objectDescribe.fields.getMap();
-            } catch (Exception describeEx) {
-                System.debug('Cannot describe object ' + objectType + '. Will attempt field setting without validation: ' + describeEx.getMessage());
-            }
-            
-            System.debug('Processing CSV for object: ' + objectType + ' with ' + fieldsMap.size() + ' available fields');
-            
-            List<String> lines = csvData.split('\n');
-            if (lines.isEmpty()) {
-                System.debug('CSV data is empty for object: ' + objectType);
-                return result;
-            }
-            
-            // Parse headers and validate
-            String headersString = lines[0].trim();
-            List<String> headers = headersString.split(',');
-            
-            // Clean headers
-            for (Integer i = 0; i < headers.size(); i++) {
-                headers[i] = cleanFieldName(headers[i]);
-            }
-            
-            System.debug('CSV headers for ' + objectType + ': ' + headers);
-            
-            // Find the external ID column index (either "Id" or "id")
-            Integer externalIdColumnIndex = -1;
-            for (Integer i = 0; i < headers.size(); i++) {
-                if (headers[i].toLowerCase() == 'id') {
-                    externalIdColumnIndex = i;
-                    break;
-                }
-            }
-            
-            // Validate headers against object fields
-            Set<String> validHeaders = validateHeaders(headers, fieldsMap);
-            if (validHeaders.isEmpty()) {
-                System.debug('No valid headers found for object: ' + objectType);
-                return result;
-            }
-
-            System.debug('Valid headers: ' + validHeaders);
-            System.debug('External ID column index: ' + externalIdColumnIndex);
-            
-            // Process each data row
-            for (Integer i = 1; i < lines.size(); i++) {
-                String dataLine = lines[i].trim();
-                if (String.isBlank(dataLine)) continue;
-                
-                System.debug('Data line: ' + dataLine);
-                List<String> dataValues = parseCSVLine(dataLine);
-                System.debug('Data values: ' + dataValues);
-                
-                // Create new sObject instance dynamically
-                SObject record = sObjectType.newSObject();
-                Boolean hasValidData = false;
-                String externalId = '';
-                
-                // Populate fields dynamically
-                for (Integer j = 0; j < headers.size() && j < dataValues.size(); j++) {
-                    if (!validHeaders.contains(headers[j])) {
-                        continue;
-                    }
-                    String fieldName = headers[j];
-                    String fieldValue = dataValues[j];
-                    
-                    // Capture external ID for mapping
-                    if (j == externalIdColumnIndex && String.isNotBlank(fieldValue)) {
-                        externalId = fieldValue.trim();
-                    }
-                    
-                    if (String.isNotBlank(fieldName) && String.isNotBlank(fieldValue)) {
-                        if (setFieldValue(record, fieldName, fieldValue, fieldsMap)) {
-                            hasValidData = true;
-                        }
-                    }
-                }
-                
-                // Only add record if it has at least some valid data
-                if (hasValidData) {
-                    Integer recordIndex = result.records.size(); // Get index before adding
-                    result.records.add(record);
-                    
-                    // Store external ID to record index mapping
-                    if (String.isNotBlank(externalId)) {
-                        result.externalIdToRecordIndex.put(externalId, recordIndex);
-                        System.debug('Mapped external ID "' + externalId + '" to record index ' + recordIndex + ' for object ' + record);
-                    }
-                }
-            }
-            
-            System.debug('Created ' + result.records.size() + ' records from CSV for ' + objectType);
-            System.debug('External ID mappings captured: ' + result.externalIdToRecordIndex.keySet());
-            
-        } catch (Exception e) {
-            System.debug('Error creating sObjects from CSV for ' + objectType + ': ' + e.getMessage());
-            System.debug('Stack trace: ' + e.getStackTraceString());
-        }
-        
-        return result;
     }
     
     // Helper method to clean field names
@@ -720,13 +546,13 @@ public class DataInsertTest {
         System.debug('=== Creating Junction Records ===');
         
         try {
-            // Find junction objects dynamically by looking for objects that have dependencies
-            for (String entityType : entityExternalIdMappings.keySet()) {
-                // Check if this entity has dependencies (indicating it's a junction object)
-                if (isJunctionObject(entityType)) {
-                    System.debug('Processing junction object: ' + entityType);
-                    processJunctionObject(entityType);
-                }
+            // For simplicity, let's focus on creating Test_Suite_Test__c junction records
+            // You can expand this logic for other junction objects
+            String junctionObjectType = 'Test_Suite_Test__c';
+            
+            if (isJunctionObject(junctionObjectType)) {
+                System.debug('Processing junction object: ' + junctionObjectType);
+                processJunctionObject(junctionObjectType);
             }
             
         } catch (Exception e) {
@@ -768,7 +594,6 @@ public class DataInsertTest {
     private static void processJunctionObject(String junctionObjectType) {
         try {
             // Construct the static resource name for the junction object
-            // Remove __c and convert to lowercase, then find matching static resource
             String baseObjectName = junctionObjectType.replace('__c', '');
             String resourceName = findJunctionStaticResource(baseObjectName);
             
@@ -784,7 +609,7 @@ public class DataInsertTest {
             System.debug('Junction CSV data loaded for ' + junctionObjectType + '. Length: ' + junctionCsv.length());
             
             // Parse the junction CSV and create records dynamically
-            List<SObject> junctionRecords = createJunctionRecordsFromCSVDynamic(junctionObjectType, junctionCsv);
+            List<SObject> junctionRecords = createJunctionRecordsFromCSV(junctionObjectType, junctionCsv);
             
             if (!junctionRecords.isEmpty()) {
                 System.debug('Inserting ' + junctionRecords.size() + ' junction records for ' + junctionObjectType);
@@ -826,30 +651,9 @@ public class DataInsertTest {
             return null;
         }
     }
-
     
-    // Helper class to store field mapping information for optimization
-    public class FieldMappingInfo {
-        public String salesforceFieldName;
-        public String entityType; // For reference fields
-        public Boolean isReference;
-        public EntityExternalIdMapping entityMapping; // Cached for performance
-        
-        public FieldMappingInfo(String salesforceFieldName, Boolean isReference) {
-            this.salesforceFieldName = salesforceFieldName;
-            this.isReference = isReference;
-        }
-        
-        public FieldMappingInfo(String salesforceFieldName, String entityType, EntityExternalIdMapping entityMapping) {
-            this.salesforceFieldName = salesforceFieldName;
-            this.entityType = entityType;
-            this.isReference = true;
-            this.entityMapping = entityMapping;
-        }
-    }
-    
-    // Helper method to create junction records from CSV dynamically (optimized)
-    private static List<SObject> createJunctionRecordsFromCSVDynamic(String junctionObjectType, String csvData) {
+    // Simplified method to create junction records from CSV
+    private static List<SObject> createJunctionRecordsFromCSV(String junctionObjectType, String csvData) {
         List<SObject> junctionRecords = new List<SObject>();
         
         try {
@@ -863,9 +667,6 @@ public class DataInsertTest {
             // Get the junction object's field information
             Schema.DescribeSObjectResult objectDescribe = junctionSObjectType.getDescribe();
             Map<String, Schema.SObjectField> fieldsMap = objectDescribe.fields.getMap();
-            
-            // Build reference field mappings once
-            Map<String, String> referenceFieldToEntityType = buildReferenceFieldMappings(fieldsMap);
             
             // Parse CSV
             List<String> lines = csvData.split('\n');
@@ -881,26 +682,55 @@ public class DataInsertTest {
                 headers[i] = cleanFieldName(headers[i]);
             }
             
-            // Pre-process headers to create optimized field mappings (do this once, not for every row)
-            List<FieldMappingInfo> fieldMappings = preprocessFieldMappings(headers, referenceFieldToEntityType, fieldsMap);
-            
             System.debug('Junction CSV headers: ' + headers);
-            System.debug('Preprocessed ' + fieldMappings.size() + ' field mappings for optimization');
             
-            // Process each data row with optimized field mappings
+            // Process each data row
             for (Integer i = 1; i < lines.size(); i++) {
                 String dataLine = lines[i].trim();
                 if (String.isBlank(dataLine)) continue;
                 
                 List<String> dataValues = parseCSVLine(dataLine);
-                SObject junctionRecord = createJunctionRecordOptimized(junctionSObjectType, dataValues, fieldMappings);
+                SObject junctionRecord = junctionSObjectType.newSObject();
+                Boolean hasValidReferences = false;
                 
-                if (junctionRecord != null) {
-                    junctionRecords.add(junctionRecord);
-                    System.debug('Created junction record for ' + junctionObjectType);
+                // Process each field
+                for (Integer j = 0; j < headers.size() && j < dataValues.size(); j++) {
+                    String fieldName = headers[j];
+                    String fieldValue = dataValues[j];
+                    
+                    if (String.isBlank(fieldName) || String.isBlank(fieldValue)) continue;
+                    
+                    try {
+                        // Check if this field is a reference field and if we have the referenced record
+                        if (fieldsMap.containsKey(fieldName.toLowerCase())) {
+                            Schema.DescribeFieldResult fieldDescribe = fieldsMap.get(fieldName.toLowerCase()).getDescribe();
+                            
+                            if (fieldDescribe.getType() == Schema.DisplayType.REFERENCE) {
+                                // This is a reference field - try to find the referenced record
+                                if (idToRecordMap.containsKey(fieldValue)) {
+                                    SObject referencedRecord = idToRecordMap.get(fieldValue);
+                                    Id salesforceId = referencedRecord.Id;
+                                    if (salesforceId != null) {
+                                        junctionRecord.put(fieldName, salesforceId);
+                                        hasValidReferences = true;
+                                        System.debug('Set reference field ' + fieldName + ' = ' + salesforceId + ' (from external ID: ' + fieldValue + ')');
+                                    }
+                                }
+                            } else {
+                                // Regular field
+                                junctionRecord.put(fieldName, fieldValue);
+                                System.debug('Set regular field ' + fieldName + ' = ' + fieldValue);
+                            }
+                        }
+                    } catch (Exception e) {
+                        System.debug('Error setting field ' + fieldName + ': ' + e.getMessage());
+                    }
                 }
-
-                System.debug('Junction record: ' + junctionRecord);
+                
+                if (hasValidReferences) {
+                    junctionRecords.add(junctionRecord);
+                    System.debug('Created junction record: ' + junctionRecord);
+                }
             }
             
         } catch (Exception e) {
@@ -909,123 +739,5 @@ public class DataInsertTest {
         }
         
         return junctionRecords;
-    }
-    
-    // Helper method to build reference field mappings once
-    private static Map<String, String> buildReferenceFieldMappings(Map<String, Schema.SObjectField> fieldsMap) {
-        Map<String, String> referenceFieldToEntityType = new Map<String, String>();
-        
-        for (String fieldName : fieldsMap.keySet()) {
-            Schema.DescribeFieldResult fieldDescribe = fieldsMap.get(fieldName).getDescribe();
-            if (fieldDescribe.getType() == Schema.DisplayType.REFERENCE && fieldDescribe.isCustom()) {
-                List<Schema.sObjectType> referenceTo = fieldDescribe.getReferenceTo();
-                if (!referenceTo.isEmpty()) {
-                    String referencedEntityType = referenceTo[0].getDescribe().getName();
-                    if (entityExternalIdMappings.containsKey(referencedEntityType)) {
-                        referenceFieldToEntityType.put(fieldName, referencedEntityType);
-                        System.debug('Found reference field: ' + fieldName + ' -> ' + referencedEntityType);
-                    }
-                }
-            }
-        }
-        
-        return referenceFieldToEntityType;
-    }
-    
-    // Helper method to preprocess field mappings for optimization
-    private static List<FieldMappingInfo> preprocessFieldMappings(
-        List<String> headers, 
-        Map<String, String> referenceFieldToEntityType, 
-        Map<String, Schema.SObjectField> fieldsMap
-    ) {
-        List<FieldMappingInfo> fieldMappings = new List<FieldMappingInfo>();
-        
-        for (String csvFieldName : headers) {
-            if (String.isBlank(csvFieldName)) {
-                fieldMappings.add(null); // Placeholder for empty headers
-                continue;
-            }
-            
-            String csvFieldNameLower = csvFieldName.toLowerCase();
-            FieldMappingInfo mapping = null;
-            
-            // Check if this is a reference field
-            for (String refField : referenceFieldToEntityType.keySet()) {
-                String refFieldLower = refField.toLowerCase();
-                
-                // More sophisticated matching logic
-                if (csvFieldNameLower.contains(refFieldLower.replace('__c', '')) || 
-                    refFieldLower.contains(csvFieldNameLower.replace('sf_devops__', '').replace('__c', '')) ||
-                    matchesFieldPattern(csvFieldNameLower, refFieldLower)) {
-                    
-                    String entityType = referenceFieldToEntityType.get(refField);
-                    EntityExternalIdMapping entityMapping = entityExternalIdMappings.get(entityType);
-                    mapping = new FieldMappingInfo(refField, entityType, entityMapping);
-                    System.debug('Mapped CSV field "' + csvFieldName + '" to reference field "' + refField + '" -> ' + entityType);
-                    break;
-                }
-            }
-            
-            // If not a reference field, check if it's a regular field
-            if (mapping == null && fieldsMap.containsKey(csvFieldNameLower)) {
-                mapping = new FieldMappingInfo(csvFieldName, false);
-                System.debug('Mapped CSV field "' + csvFieldName + '" to regular field');
-            }
-            
-            fieldMappings.add(mapping);
-        }
-        
-        return fieldMappings;
-    }
-    
-    // Helper method to check if field names match using patterns
-    private static Boolean matchesFieldPattern(String csvFieldLower, String refFieldLower) {
-        // Remove common prefixes and suffixes for comparison
-        String csvClean = csvFieldLower.replace('sf_devops__', '').replace('__c', '');
-        String refClean = refFieldLower.replace('__c', '');
-        
-        return csvClean.equals(refClean) || 
-               csvClean.contains(refClean) || 
-               refClean.contains(csvClean);
-    }
-    
-    // Optimized method to create a single junction record
-    private static SObject createJunctionRecordOptimized(
-        Schema.SObjectType junctionSObjectType, 
-        List<String> dataValues, 
-        List<FieldMappingInfo> fieldMappings
-    ) {
-        SObject junctionRecord = junctionSObjectType.newSObject();
-        Boolean hasValidReferences = false;
-        
-        // Process fields using pre-calculated mappings (no nested loops!)
-        for (Integer j = 0; j < fieldMappings.size() && j < dataValues.size(); j++) {
-            FieldMappingInfo mapping = fieldMappings[j];
-            String fieldValue = dataValues[j];
-            
-            if (mapping == null || String.isBlank(fieldValue)) continue;
-            
-            try {
-                if (mapping.isReference && mapping.entityMapping != null) {
-                    // Handle reference field - direct lookup using cached mapping
-                    if (mapping.entityMapping.externalIdToSalesforceId.containsKey(fieldValue)) {
-                        Id salesforceId = mapping.entityMapping.externalIdToSalesforceId.get(fieldValue);
-                        if (salesforceId != null) {
-                            junctionRecord.put(mapping.salesforceFieldName, salesforceId);
-                            hasValidReferences = true;
-                            System.debug('Mapped external ID "' + fieldValue + '" to Salesforce ID "' + salesforceId + '" for field ' + mapping.salesforceFieldName);
-                        }
-                    }
-                } else if (!mapping.isReference) {
-                    // Handle regular field - direct assignment
-                    junctionRecord.put(mapping.salesforceFieldName, fieldValue);
-                    System.debug('Set regular field ' + mapping.salesforceFieldName + ' = ' + fieldValue);
-                }
-            } catch (Exception e) {
-                System.debug('Error setting field ' + mapping.salesforceFieldName + ': ' + e.getMessage());
-            }
-        }
-        
-        return hasValidReferences ? junctionRecord : null;
     }
 }
